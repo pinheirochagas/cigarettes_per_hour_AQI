@@ -1,3 +1,4 @@
 ipywidgets
 requests
 IPython
+voila
