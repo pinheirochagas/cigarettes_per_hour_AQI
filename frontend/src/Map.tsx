@@ -6,6 +6,7 @@ import FireLayer from './FireLayer'
 import mapboxLogo from './assets/mapbox-logo.svg'
 
 interface Props {
+  mobileView: 'map' | 'results';
   selection: Selection | null; data: AirData | null; drawing: boolean;
   source: DataSource; stationData: StationData | null; loading: boolean;
   stationId: string;
@@ -28,6 +29,15 @@ export default function MapView(props: Props) {
   const [zoom, setZoom] = useState(3)
   const [showFires, setShowFires] = useState(false)
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null)
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches)
+  const visible = !mobile || props.mobileView === 'map'
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)')
+    const update = () => setMobile(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const m = L.map(host.current!, { zoomControl: false, minZoom: 2, maxZoom: 17, worldCopyJump: true }).setView([27, -26], 3)
@@ -87,9 +97,23 @@ export default function MapView(props: Props) {
     function cancelDraft() { clearDraft() }
     host.current!.addEventListener('cancel-draw', cancelDraft)
     const node = host.current!
-    const observer = new ResizeObserver(() => m.invalidateSize())
+    let resizeFrame = 0
+    const resize = () => {
+      cancelAnimationFrame(resizeFrame)
+      resizeFrame = requestAnimationFrame(() => {
+        if (node.clientWidth > 0 && node.clientHeight > 0) m.invalidateSize({ animate: false, debounceMoveend: true })
+      })
+    }
+    const observer = new ResizeObserver(resize)
     observer.observe(node)
-    return () => { controller.abort(); observer.disconnect(); node.removeEventListener('cancel-draw', cancelDraft); m.remove(); map.current = null }
+    window.visualViewport?.addEventListener('resize', resize)
+    window.addEventListener('pageshow', resize)
+    return () => {
+      controller.abort(); observer.disconnect(); cancelAnimationFrame(resizeFrame)
+      window.visualViewport?.removeEventListener('resize', resize)
+      window.removeEventListener('pageshow', resize)
+      node.removeEventListener('cancel-draw', cancelDraft); m.remove(); map.current = null
+    }
   }, [])
 
   useEffect(() => {
@@ -98,13 +122,22 @@ export default function MapView(props: Props) {
   }, [props.drawing])
 
   useEffect(() => {
-    if (!props.selection || !map.current) return
-    const b = props.selection.bounds
-    map.current.fitBounds([[b.south, b.west], [b.north, b.east]], {
-      paddingTopLeft: [65, 70], paddingBottomRight: [65, 125], maxZoom: 12,
-      animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    if (!visible || !mapInstance) return
+    // Visibility changes do not trigger ResizeObserver. Wait for the mobile
+    // panel's layout, then refresh Leaflet's cached dimensions before fitting.
+    const frame = requestAnimationFrame(() => {
+      const container = mapInstance.getContainer()
+      if (container.clientWidth <= 0 || container.clientHeight <= 0) return
+      mapInstance.invalidateSize({ animate: false, debounceMoveend: true })
+      if (props.selection) {
+        const b = props.selection.bounds
+        mapInstance.fitBounds([[b.south, b.west], [b.north, b.east]], {
+          paddingTopLeft: [40, 70], paddingBottomRight: [40, 125], maxZoom: 12, animate: false,
+        })
+      }
     })
-  }, [props.selection])
+    return () => cancelAnimationFrame(frame)
+  }, [props.selection, visible, mapInstance])
 
   useEffect(() => {
     const group = layers.current
@@ -246,14 +279,14 @@ export default function MapView(props: Props) {
   return <section className={`map-panel ${props.drawing ? 'drawing' : ''} ${props.source === 'purpleair' && zoom < 13 ? 'sensor-overview' : ''}`} aria-label="Air quality map">
     <div ref={host} className="map-canvas" aria-label="Click the map to select an area. You can also use the place search." />
     <div className="map-tools">
-      <button onClick={() => setShowFires(value => !value)} className={showFires ? 'active' : ''} aria-pressed={showFires} title="Show reported U.S. wildfires and global satellite heat detections">Fires</button>
+      <button onClick={() => setShowFires(value => !value)} className={showFires ? 'active' : ''} aria-pressed={showFires} title="Show U.S. and international wildfire events and global satellite heat detections">Fires</button>
       {props.selection && props.source === 'model' && <button onClick={() => setShowCells(v => !v)} className={showCells ? 'active' : ''} aria-pressed={showCells} title="Show the model grid coordinates returned by the air-quality provider">Model cells</button>}
       <button onClick={props.drawing ? props.onCancel : props.onDrawStart} className={props.drawing ? 'active' : ''} aria-pressed={props.drawing}>
         <span aria-hidden="true">⌑</span> {props.drawing ? 'Cancel drawing' : 'Draw an area'}
       </button>
       <button onClick={recenter} aria-label="Recenter map" title="Recenter map">⌖</button>
     </div>
-    <FireLayer map={mapInstance} enabled={showFires} />
+    <FireLayer map={mapInstance} enabled={showFires && visible} />
     {(tileError || configError) && <p className="tile-error" role="status">{configError || 'Mapbox tiles are unavailable. Check the token’s URL permissions or try reloading.'}</p>}
     <a className="mapbox-logo" href="https://www.mapbox.com/about/maps/" aria-label="Mapbox" target="_blank" rel="noreferrer"><img src={mapboxLogo} alt="Mapbox" /></a>
     <div className="map-caption" aria-live="polite">

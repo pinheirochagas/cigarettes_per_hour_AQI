@@ -204,6 +204,7 @@ export default function App() {
     </nav>
     <main>
       <MapView selection={selection} data={data} drawing={drawing} onPoint={selectPoint} onBox={selectBox}
+        mobileView={mobileView}
         source={source} stationData={stationData} stationId={stationId} loading={loading} onStation={setStationId}
         onDrawStart={() => { actionVersion.current++; setLocating(false); setDrawing(true); setError('') }} onCancel={() => setDrawing(false)} />
       <aside className="sidebar" aria-label="Location and exposure">

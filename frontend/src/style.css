@@ -12,7 +12,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 button:disabled { cursor: default; opacity: .5; }
 button:hover:not(:disabled), a:hover { color: var(--accent); }
 ::selection { color: var(--paper); background: var(--ink); }
-.app { height: 100dvh; display: flex; flex-direction: column; }
+.app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 .masthead { height: 58px; flex: none; padding: 0 24px; display: flex; align-items: center; border-bottom: 1px solid var(--ink); gap: 20px; }
 .wordmark { font-size: 27px; font-weight: 400; letter-spacing: -1px; text-decoration: none; line-height: 1; }
 .header-links { margin-left: auto; display: flex; gap: 25px; align-items: center; font-family: var(--mono); font-size: 10px; }
@@ -199,14 +199,15 @@ input[type=range]::-moz-range-thumb { width: 8px; height: 8px; background: var(-
   .forecast { padding-top: 7px; padding-bottom: 6px; }
 }
 @media (max-width: 760px) {
+  .app { --mobile-header-height: 50px; }
   .masthead { height: 50px; padding: 0 16px; gap: 8px; }
   .wordmark { font-size: 23px; letter-spacing: -.7px; }
   .header-links { font-size: 9px; gap: 15px; }
   .mobile-tabs { display: flex; height: 34px; flex: none; border-bottom: 1px solid var(--ink); }
   .mobile-tabs button { flex: 1; font-size: 11px; }
   .mobile-tabs button[aria-pressed=true] { background: var(--ink); color: var(--paper); }
-  main { display: block; position: relative; }
-  .map-panel, .sidebar { position: absolute; inset: 0; }
+  main { display: block; position: relative; flex: none; height: calc(100vh - var(--mobile-header-height) - 34px); height: calc(100dvh - var(--mobile-header-height) - 34px); }
+  .map-panel, .sidebar { position: absolute; inset: 0; width: 100%; height: 100%; }
   .map-panel { z-index: 1; }
   .sidebar { z-index: 2; background: var(--paper); border-left: 0; padding: 14px 22px 10px; }
   .mobile-map .sidebar { visibility: hidden; pointer-events: none; }
@@ -225,6 +226,7 @@ input[type=range]::-moz-range-thumb { width: 8px; height: 8px; background: var(-
   .formula { font-size: 11px; }
 }
 @media (max-height: 690px) {
+  .app { --mobile-header-height: 48px; }
   .source-options { padding: 3px 0; }
   .source-options button { padding: 4px 2px; }
   .location-controls .search-results { top: 62px; }

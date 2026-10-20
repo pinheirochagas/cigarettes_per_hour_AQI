@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import L from 'leaflet'
 import type { FireData } from './types'
-import { normalizeLongitude } from './geo'
+import { fireViewport } from './mapViewport'
 
 export default function FireLayer({ map, enabled }: { map: L.Map | null; enabled: boolean }) {
   const [data, setData] = useState<FireData | null>(null)
@@ -35,23 +35,30 @@ export default function FireLayer({ map, enabled }: { map: L.Map | null; enabled
 
     async function load() {
       if (!map || disposed) return
+      const bounds = map.getBounds()
+      const viewport = fireViewport({
+        south: bounds.getSouth(), north: bounds.getNorth(),
+        west: bounds.getWest(), east: bounds.getEast(),
+      }, map.getZoom(), map.getSize())
+      if (!viewport) {
+        setLoading(false)
+        setError('Waiting for a usable map view. Try recentering or zooming in.')
+        return
+      }
       const request = new AbortController()
       controller = request
       timeout = window.setTimeout(() => request.abort('timeout'), 35000)
       setLoading(true); setError(''); setData(null); group.clearLayers()
-      const bounds = map.getBounds()
-      const world = bounds.getEast() - bounds.getWest() >= 360
       try {
         const response = await fetch('/api/fires', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           signal: request.signal,
-          body: JSON.stringify({
-            south: Math.max(-85, bounds.getSouth()), north: Math.min(85, bounds.getNorth()),
-            west: world ? -180 : normalizeLongitude(bounds.getWest()),
-            east: world ? 180 : normalizeLongitude(bounds.getEast()), zoom: Math.round(map.getZoom()),
-          }),
+          body: JSON.stringify(viewport),
         })
-        if (!response.ok) throw new Error('Fire feeds are unavailable. Try again.')
+        if (!response.ok) throw new Error(response.status === 422
+          ? 'This map view could not be queried. Recenter or zoom in, then retry.'
+          : response.status === 429 ? 'Too many requests. Please wait a moment and retry.'
+            : 'Fire feeds are unavailable. Try again.')
         const result: FireData = await response.json()
         if (request.signal.aborted || disposed) return
         setData(result)
@@ -115,7 +122,7 @@ export default function FireLayer({ map, enabled }: { map: L.Map | null; enabled
           marker.bindPopup(content, { autoPan: false }).addTo(group)
         })
       } catch (err) {
-        if (disposed) return
+        if (disposed || controller !== request) return
         if (!request.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load fires.')
         else if (request.signal.reason === 'timeout') setError('Fire feeds took too long. Try again.')
       } finally {
@@ -131,14 +138,14 @@ export default function FireLayer({ map, enabled }: { map: L.Map | null; enabled
       setData(null); setLoading(true); group.clearLayers()
       debounce = window.setTimeout(() => { void load() }, 350)
     }
-    map.on('moveend', schedule)
+    map.on('moveend resize', schedule)
     schedule()
     // Recheck the rolling cutoff even while upstream downloads remain cached.
     const refresh = window.setInterval(schedule, 60000)
     return () => {
       disposed = true; controller?.abort()
       clearTimeout(timeout); clearTimeout(debounce); clearInterval(refresh)
-      map.off('moveend', schedule); group.remove()
+      map.off('moveend resize', schedule); group.remove()
     }
   }, [map, enabled, retry])
 
